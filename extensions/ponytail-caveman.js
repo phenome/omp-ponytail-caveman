@@ -5,7 +5,7 @@ import path from "node:path";
 const DEFAULT_MODE = "full";
 const RUNTIME_MODES = new Set(["off", "lite", "full", "ultra"]);
 const SESSION_ENTRY_TYPE = "ponytail-mode";
-const CAVEMAN_MODE = "ultra";
+const DEFAULT_CAVEMAN_MODE = "ultra";
 const CAVEMAN_MODES = new Set(["lite", "full", "ultra", "wenyan-lite", "wenyan-full", "wenyan-ultra"]);
 const CAVEMAN_SESSION_ENTRY_TYPE = "caveman-mode";
 const CONFIG_FILE_NAME = "ponytail-caveman.json";
@@ -78,6 +78,8 @@ function applyDefaultConfig(result, filePath, config) {
 
   const cavemanEnabled = normalizeBoolean(config?.caveman?.enabled);
   if (cavemanEnabled !== null) result.cavemanEnabled = cavemanEnabled;
+  const cavemanMode = normalizeCavemanMode(config?.caveman?.mode);
+  if (cavemanMode) result.cavemanMode = cavemanMode;
 
   result.sources.push(filePath);
 }
@@ -92,6 +94,7 @@ export function resolveDefaultConfig({ cwd = process.cwd(), agentDir, env = proc
   const result = {
     ponytailDefaultMode: DEFAULT_MODE,
     cavemanEnabled: DEFAULT_CAVEMAN_ENABLED,
+    cavemanMode: DEFAULT_CAVEMAN_MODE,
     sources: [],
     warnings: [],
   };
@@ -118,6 +121,12 @@ export function resolveDefaultConfig({ cwd = process.cwd(), agentDir, env = proc
   if (envCavemanEnabled !== null) {
     result.cavemanEnabled = envCavemanEnabled;
     result.sources.push("env:CAVEMAN_DEFAULT_ENABLED");
+  }
+
+  const envCavemanMode = normalizeCavemanMode(env.CAVEMAN_DEFAULT_MODE);
+  if (envCavemanMode) {
+    result.cavemanMode = envCavemanMode;
+    result.sources.push("env:CAVEMAN_DEFAULT_MODE");
   }
 
   return result;
@@ -154,6 +163,13 @@ function writeDefaultCavemanEnabled(enabled) {
   return normalizedEnabled;
 }
 
+export function writeDefaultCavemanMode(mode) {
+  const normalizedMode = normalizeCavemanMode(mode);
+  if (!normalizedMode) return null;
+  writeGlobalConfigPatch({ caveman: { mode: normalizedMode } });
+  return normalizedMode;
+}
+
 export function parsePonytailCommand(text, defaultMode = DEFAULT_MODE) {
   const args = String(text || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (args.length === 0) {
@@ -187,6 +203,12 @@ export function parseCavemanCommand(text) {
   if (args.length === 2 && args[0] === "default") {
     if (args[1] === "on") return { type: "set-default-enabled", enabled: true };
     if (args[1] === "off") return { type: "set-default-enabled", enabled: false };
+    const mode = normalizeCavemanMode(args[1]);
+    if (mode) return { type: "set-default-mode", mode };
+  }
+  if (args.length === 1) {
+    const mode = normalizeCavemanMode(args[0]);
+    if (mode) return { type: "set-mode", mode };
   }
   return { type: "unknown" };
 }
@@ -212,6 +234,18 @@ export function resolveCavemanEnabled(entries, fallbackEnabled = DEFAULT_CAVEMAN
   }
 
   return fallbackEnabled;
+}
+
+export function resolveCavemanMode(entries, fallbackMode = DEFAULT_CAVEMAN_MODE) {
+  const list = Array.isArray(entries) ? entries : [];
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const entry = list[index];
+    if (entry?.type !== "custom" || entry.customType !== CAVEMAN_SESSION_ENTRY_TYPE) continue;
+    const mode = normalizeCavemanMode(entry.data?.mode);
+    if (mode) return mode;
+  }
+
+  return normalizeCavemanMode(fallbackMode) || DEFAULT_CAVEMAN_MODE;
 }
 
 function filterSkillBody(body, mode, normalize, defaultMode, blockedLinePattern) {
@@ -313,22 +347,22 @@ export function getPonytailInstructions(mode) {
 }
 
 function filterCavemanBodyForMode(body, mode) {
-  return filterSkillBody(body, mode, normalizeCavemanMode, CAVEMAN_MODE, /stop caveman|normal mode/i);
+  return filterSkillBody(body, mode, normalizeCavemanMode, DEFAULT_CAVEMAN_MODE, /stop caveman|normal mode/i);
 }
 
-export function getCavemanInstructions(mode = CAVEMAN_MODE) {
-  const effectiveMode = normalizeCavemanMode(mode) || CAVEMAN_MODE;
+export function getCavemanInstructions(mode = DEFAULT_CAVEMAN_MODE) {
+  const effectiveMode = normalizeCavemanMode(mode) || DEFAULT_CAVEMAN_MODE;
   const body = readFirstSkill("caveman");
   if (body) {
     return `CAVEMAN MODE ACTIVE — level: ${effectiveMode}\n\n${filterCavemanBodyForMode(body, effectiveMode)}`;
   }
 
-  return "CAVEMAN MODE ACTIVE — level: ultra\n\nRespond ultra-terse. Drop filler, hedging, pleasantries. Keep technical terms exact. Code unchanged.";
+  return `CAVEMAN MODE ACTIVE — level: ${effectiveMode}\n\nRespond ${effectiveMode}-terse. Drop filler, hedging, pleasantries. Keep technical terms exact. Code unchanged.`;
 }
 
-function buildBeforeAgentStartContent(ponytailMode, cavemanEnabled) {
+function buildBeforeAgentStartContent(ponytailMode, cavemanEnabled, cavemanMode) {
   const chunks = [];
-  if (cavemanEnabled) chunks.push(getCavemanInstructions(CAVEMAN_MODE));
+  if (cavemanEnabled) chunks.push(getCavemanInstructions(cavemanMode));
   if (ponytailMode && ponytailMode !== "off") chunks.push(getPonytailInstructions(ponytailMode));
   return chunks.join("\n\n---\n\n");
 }
@@ -339,11 +373,26 @@ function notify(ctx, message, severity = "info") {
   notifier(message, severity);
 }
 
+function updateStatusWidget(ctx, ponytailMode, cavemanEnabled, cavemanMode) {
+  if (!ctx?.hasUI || typeof ctx.ui?.setWidget !== "function") return;
+
+  const parts = [];
+  if (ponytailMode && ponytailMode !== "off") parts.push(`Ponytail ${ponytailMode}`);
+  if (cavemanEnabled) parts.push(`Caveman ${cavemanMode}`);
+
+  ctx.ui.setWidget(
+    "ponytail-caveman",
+    parts.length ? () => ({ render() { return [parts.join(" • ")]; } }) : undefined,
+  );
+}
+
 export default function ponytailCavemanExtension(pi) {
   let resolvedDefaults = resolveDefaultConfig();
   let configuredDefaultMode = resolvedDefaults.ponytailDefaultMode;
   let configuredCavemanEnabled = resolvedDefaults.cavemanEnabled;
+  let configuredCavemanMode = resolvedDefaults.cavemanMode;
   let currentMode = configuredDefaultMode;
+  let currentCavemanMode = configuredCavemanMode;
   let cavemanEnabled = configuredCavemanEnabled;
 
   function setCurrentMode(mode, ctx) {
@@ -353,13 +402,27 @@ export default function ponytailCavemanExtension(pi) {
     currentMode = normalizedMode;
     pi.appendEntry(SESSION_ENTRY_TYPE, { mode: normalizedMode });
     notify(ctx, `Ponytail mode set to ${normalizedMode}.`);
+    updateStatusWidget(ctx, currentMode, cavemanEnabled, currentCavemanMode);
     return true;
   }
 
   function setCavemanEnabled(enabled, ctx) {
     cavemanEnabled = Boolean(enabled);
-    pi.appendEntry(CAVEMAN_SESSION_ENTRY_TYPE, { enabled: cavemanEnabled });
-    notify(ctx, `Caveman ultra ${cavemanEnabled ? "on" : "off"}.`);
+    pi.appendEntry(CAVEMAN_SESSION_ENTRY_TYPE, { enabled: cavemanEnabled, mode: currentCavemanMode });
+    notify(ctx, `Caveman ${currentCavemanMode} ${cavemanEnabled ? "on" : "off"}.`);
+    updateStatusWidget(ctx, currentMode, cavemanEnabled, currentCavemanMode);
+  }
+
+  function setCavemanMode(mode, ctx) {
+    const normalizedMode = normalizeCavemanMode(mode);
+    if (!normalizedMode) return false;
+
+    currentCavemanMode = normalizedMode;
+    cavemanEnabled = true;
+    pi.appendEntry(CAVEMAN_SESSION_ENTRY_TYPE, { enabled: true, mode: normalizedMode });
+    notify(ctx, `Caveman mode set to ${normalizedMode}.`);
+    updateStatusWidget(ctx, currentMode, cavemanEnabled, currentCavemanMode);
+    return true;
   }
 
   pi.registerCommand("ponytail", {
@@ -399,23 +462,34 @@ export default function ponytailCavemanExtension(pi) {
   });
 
   pi.registerCommand("caveman", {
-    description: "Enable or disable Caveman ultra",
+    description: "Set or report Caveman mode",
     handler: async (args, ctx) => {
       const parsed = parseCavemanCommand(args);
 
       if (parsed.type === "status") {
-        notify(ctx, `Caveman ultra: ${cavemanEnabled ? "on" : "off"}`);
+        notify(ctx, `Caveman: current ${cavemanEnabled ? currentCavemanMode : "off"} • default ${configuredCavemanMode} • default enabled ${configuredCavemanEnabled ? "on" : "off"}`);
         return;
       }
 
       if (parsed.type === "default-status") {
-        notify(ctx, `Caveman ultra default: ${configuredCavemanEnabled ? "on" : "off"}`);
+        notify(ctx, `Caveman default: ${configuredCavemanMode} • enabled ${configuredCavemanEnabled ? "on" : "off"}`);
         return;
       }
 
       if (parsed.type === "set-default-enabled") {
         configuredCavemanEnabled = writeDefaultCavemanEnabled(parsed.enabled);
-        notify(ctx, `Default Caveman ultra set to ${configuredCavemanEnabled ? "on" : "off"}.`);
+        notify(ctx, `Default Caveman enabled set to ${configuredCavemanEnabled ? "on" : "off"}.`);
+        return;
+      }
+
+      if (parsed.type === "set-default-mode") {
+        configuredCavemanMode = writeDefaultCavemanMode(parsed.mode);
+        if (!configuredCavemanMode) {
+          notify(ctx, "Unknown or unsupported /caveman mode.", "warning");
+          return;
+        }
+
+        notify(ctx, `Default Caveman mode set to ${configuredCavemanMode}.`);
         return;
       }
 
@@ -424,7 +498,12 @@ export default function ponytailCavemanExtension(pi) {
         return;
       }
 
-      notify(ctx, "Unknown or unsupported /caveman mode. Use /caveman on, /caveman off, or /caveman default on|off.", "warning");
+      if (parsed.type === "set-mode") {
+        setCavemanMode(parsed.mode, ctx);
+        return;
+      }
+
+      notify(ctx, "Unknown or unsupported /caveman mode. Use /caveman on|off, /caveman <mode>, or /caveman default on|off|<mode>.", "warning");
     },
   });
 
@@ -434,19 +513,22 @@ export default function ponytailCavemanExtension(pi) {
     for (const warning of resolvedDefaults.warnings) notify(ctx, warning, "warning");
     configuredDefaultMode = resolvedDefaults.ponytailDefaultMode;
     configuredCavemanEnabled = resolvedDefaults.cavemanEnabled;
+    configuredCavemanMode = resolvedDefaults.cavemanMode;
     currentMode = resolveSessionMode(entries, configuredDefaultMode);
+    currentCavemanMode = resolveCavemanMode(entries, configuredCavemanMode);
     cavemanEnabled = resolveCavemanEnabled(entries, configuredCavemanEnabled);
+    updateStatusWidget(ctx, currentMode, cavemanEnabled, currentCavemanMode);
   });
 
   pi.on("before_agent_start", async () => {
-    const content = buildBeforeAgentStartContent(currentMode, cavemanEnabled);
+    const content = buildBeforeAgentStartContent(currentMode, cavemanEnabled, currentCavemanMode);
     if (!content) return;
     return {
       message: {
         customType: "ponytail-caveman-instructions",
         content,
         display: false,
-        details: { ponytailMode: currentMode, caveman: cavemanEnabled ? CAVEMAN_MODE : "off" },
+        details: { ponytailMode: currentMode, caveman: cavemanEnabled ? currentCavemanMode : "off" },
       },
     };
   });
