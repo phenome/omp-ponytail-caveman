@@ -1,16 +1,16 @@
 {
-  "name": "ponytail-caveman",
-  "version": "0.2.0",
+  "name": "omp-ponytail-caveman",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "Oh My Pi Ponytail + Caveman extension",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/phenome/omp-extensions.git"
+    "url": "git+https://github.com/phenome/omp-ponytail-caveman.git"
   },
   "omp": {
-    "extensions": ["./extensions/ponytail-caveman.js"]
+    "extensions": ["./index.js"]
   },
   "scripts": {
     "postinstall": "node scripts/install-ponytail-caveman.mjs"
