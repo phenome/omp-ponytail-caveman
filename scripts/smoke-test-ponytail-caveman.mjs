@@ -59,7 +59,12 @@ function assertCompletions(command, prefix, expected) {
   assert.equal(typeof command.getArgumentCompletions, 'function');
   const completions = command.getArgumentCompletions(prefix);
   assert.equal(Array.isArray(completions), true);
-  for (const value of expected) assert.equal(completions.includes(value), true);
+  for (const completion of completions) {
+    assert.equal(typeof completion.label, 'string');
+    assert.equal(typeof completion.value, 'string');
+  }
+  const values = completions.map((completion) => completion.value);
+  for (const value of expected) assert.equal(values.includes(value), true);
 }
 
 writeConfig(globalConfigPath, {
@@ -229,6 +234,32 @@ try {
   assert.match(notifications.at(-1).message, /Repo Caveman set to on\./);
   assert.deepEqual(readConfig(repoConfigPath).caveman, { enabled: true });
   assert.equal(widgetLine(), 'Caveman wenyan-lite');
+
+  const unsetAgentDir = path.join(tmpRoot, 'unset-agent');
+  const unsetCwd = path.join(tmpRoot, 'unset-cwd');
+  fs.mkdirSync(unsetCwd, { recursive: true });
+  process.env.PI_CODING_AGENT_DIR = unsetAgentDir;
+  const unsetEvents = new Map();
+  const unsetCommands = new Map();
+  const unsetNotifications = [];
+  extension({
+    on: (name, handler) => unsetEvents.set(name, handler),
+    registerCommand: (name, command) => unsetCommands.set(name, command),
+    appendEntry: () => {},
+  });
+  await unsetEvents.get('session_start')({}, {
+    cwd: unsetCwd,
+    hasUI: false,
+    ui: { notify: (message, severity) => unsetNotifications.push({ message, severity }) },
+    sessionManager: { getEntries: () => [] },
+  });
+  await unsetCommands.get('ponytail').handler('', {
+    cwd: unsetCwd,
+    hasUI: false,
+    ui: { notify: (message, severity) => unsetNotifications.push({ message, severity }) },
+    sessionManager: { getEntries: () => [] },
+  });
+  assert.match(unsetNotifications.at(-1).message, /global unset • repo unset/i);
 
 
   console.log('ponytail-caveman smoke test ok');

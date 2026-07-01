@@ -373,7 +373,7 @@ function stateLabel(state) {
 
 function scopeLabel(scope, tool) {
   if (scope.warning) return "invalid";
-  if (!scope.exists) return "missing";
+  if (!scope.exists) return "unset";
 
   const patch = scope.state[tool];
   if (!hasPatch(patch)) return "unset";
@@ -412,7 +412,9 @@ function completions(tool, argumentPrefix = "") {
   const [first, rest = ""] = prefix.split(/\s+/, 2);
   const values = ["global", "repo"].includes(first) ? scopedCommandValues(tool) : commandValues(tool);
   const activePrefix = ["global", "repo"].includes(first) ? rest : first;
-  return values.filter((value) => value.startsWith(activePrefix));
+  return values
+    .filter((value) => value.startsWith(activePrefix))
+    .map((value) => ({ label: value, value }));
 }
 
 function run(command, args) {
