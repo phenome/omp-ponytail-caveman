@@ -278,10 +278,12 @@ function skillPaths(name, { skillsDir, agentDir, homeDir = os.homedir(), env = p
 }
 
 const skillBodyCache = new Map();
+let skillStatusCache = null;
 
-function refreshSkillCache() {
+function refreshSkillStatus() {
   skillBodyCache.clear();
-  return { ponytail: readFirstSkill("ponytail"), caveman: readFirstSkill("caveman") };
+  skillStatusCache = resolveSkillStatus();
+  return skillStatusCache;
 }
 
 function readFirstSkill(name) {
@@ -316,7 +318,7 @@ export function resolveSkillStatus(options = {}) {
 }
 
 function skillMissing(name) {
-  return !readFirstSkill(name);
+  return skillStatusCache ? Boolean(skillStatusCache[name]?.missing) : !readFirstSkill(name);
 }
 
 export function getPonytailInstructions(mode) {
@@ -465,7 +467,7 @@ export default function ponytailCavemanExtension(pi) {
 
   async function maybeRefreshEnabledSkill(ctx, tool) {
     if (!state[tool].enabled) return;
-    refreshSkillCache();
+    refreshSkillStatus();
     if (skillMissing(tool)) notify(ctx, `${tool} skill missing; instructions omitted until /${tool} install-skills succeeds.`, "warning");
   }
 
@@ -480,10 +482,10 @@ export default function ponytailCavemanExtension(pi) {
     if (parsed.type === "install-skills") {
       try {
         const runner = await installSkills();
-        refreshSkillCache();
+        refreshSkillStatus();
         notify(ctx, `Ponytail/Caveman skills refreshed via ${runner}.`);
       } catch (error) {
-        refreshSkillCache();
+        refreshSkillStatus();
         notify(ctx, `Skill install failed: ${error.message}`, "warning");
       }
       updateStatusWidget(ctx, state);
@@ -526,7 +528,7 @@ export default function ponytailCavemanExtension(pi) {
 
   pi.on("session_start", async (_event, ctx) => {
     refreshConfig(ctx);
-    refreshSkillCache();
+    refreshSkillStatus();
     refreshStateFromSession(ctx);
     for (const tool of ["ponytail", "caveman"]) {
       if (state[tool].enabled && skillMissing(tool)) notify(ctx, `${tool} skill missing; instructions omitted until /${tool} install-skills succeeds.`, "warning");
