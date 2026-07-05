@@ -536,18 +536,12 @@ export default function ponytailCavemanExtension(pi) {
     updateStatusWidget(ctx, state);
   });
 
-  pi.on("before_agent_start", async (_event, ctx) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     refreshConfig(ctx);
     refreshStateFromSession(ctx);
     const content = buildBeforeAgentStartContent(state);
     if (!content) return;
-    return {
-      message: {
-        customType: "ponytail-caveman-instructions",
-        content,
-        display: false,
-        details: { ponytail: { ...state.ponytail }, ponytailMode: state.ponytail.enabled ? state.ponytail.mode : "off", caveman: state.caveman.enabled ? state.caveman.mode : "off" },
-      },
-    };
+    const baseSystemPrompt = Array.isArray(event.systemPrompt) ? event.systemPrompt : [];
+    return { systemPrompt: [...baseSystemPrompt, content] };
   });
 }
