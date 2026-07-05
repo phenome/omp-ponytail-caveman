@@ -203,7 +203,7 @@ function resolveSessionToolState(entries, customType, fallback, normalizeMode) {
   const list = Array.isArray(entries) ? entries : [];
 
   for (const entry of list) {
-    if (entry?.type !== "custom" || entry.customType !== customType) continue;
+    if (entry?.customType !== customType || (entry.type !== undefined && entry.type !== "custom")) continue;
 
     const enabled = normalizeBoolean(entry.data?.enabled);
     const mode = normalizeMode(entry.data?.mode);
@@ -536,7 +536,9 @@ export default function ponytailCavemanExtension(pi) {
     updateStatusWidget(ctx, state);
   });
 
-  pi.on("before_agent_start", async () => {
+  pi.on("before_agent_start", async (_event, ctx) => {
+    refreshConfig(ctx);
+    refreshStateFromSession(ctx);
     const content = buildBeforeAgentStartContent(state);
     if (!content) return;
     return {

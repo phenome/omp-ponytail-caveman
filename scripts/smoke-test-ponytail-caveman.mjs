@@ -154,12 +154,16 @@ try {
   extension({
     on: (name, handler) => events.set(name, handler),
     registerCommand: (name, command) => commands.set(name, command),
-    appendEntry: (customType, data) => appended.push({ customType, data }),
+    appendEntry: (customType, data) => {
+      appended.push({ customType, data });
+      sessionEntries = sessionEntries.filter((entry) => entry.customType !== customType);
+      sessionEntries.push({ type: 'custom', customType, data });
+    },
   });
 
   let sessionEntries = [
-    { type: 'custom', customType: 'ponytail-mode', data: { enabled: true } },
-    { type: 'custom', customType: 'caveman-mode', data: { mode: 'lite' } },
+    { type: 'custom', customType: 'ponytail-mode', data: { enabled: false, mode: 'ultra' } },
+    { type: 'custom', customType: 'caveman-mode', data: { enabled: false, mode: 'ultra' } },
   ];
   const ctx = {
     cwd: subdir,
@@ -184,6 +188,12 @@ try {
   assertCompletions(commands.get('caveman'), '', ['status', 'help', 'on', 'off', 'lite', 'full', 'ultra', 'wenyan-lite', 'wenyan-full', 'wenyan-ultra', 'global', 'repo', 'install-skills']);
   assertCompletions(commands.get('caveman'), 'w', ['wenyan-lite', 'wenyan-full', 'wenyan-ultra']);
   assertCompletions(commands.get('caveman'), 'global w', ['global wenyan-lite', 'global wenyan-full', 'global wenyan-ultra']);
+
+  assert.equal(await events.get('before_agent_start')({}, ctx), undefined);
+  sessionEntries = [
+    { type: 'custom', customType: 'ponytail-mode', data: { enabled: true } },
+    { type: 'custom', customType: 'caveman-mode', data: { mode: 'lite' } },
+  ];
 
   await events.get('session_start')({}, ctx);
   assert.equal(widgets.at(-1).id, 'ponytail-caveman');
