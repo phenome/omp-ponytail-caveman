@@ -1,6 +1,6 @@
 {
   "name": "omp-ponytail-caveman",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": false,
   "type": "module",
   "main": "index.js",
@@ -28,7 +28,9 @@
     "LICENSE"
   ],
   "omp": {
-    "extensions": ["./index.js"]
+    "extensions": [
+      "./index.js"
+    ]
   },
   "scripts": {
     "postinstall": "node scripts/install-ponytail-caveman.mjs",

@@ -178,10 +178,11 @@ try {
     sessionManager: { getEntries: () => sessionEntries },
   };
   const widgetLine = () => widgets.at(-1)?.widget?.render(80).join('\n');
-  const injectedInstructions = (result) => {
+  const injectedInstructions = (result, event) => {
     assert.equal(result.message, undefined);
-    assert.deepEqual(result.systemPrompt.slice(0, 1), ['BASE']);
-    return result.systemPrompt.slice(1).join('\n');
+    assert.equal(result.systemPrompt, event.systemPrompt);
+    assert.deepEqual(event.systemPrompt.slice(0, 1), ['BASE']);
+    return event.systemPrompt.slice(1).join('\n');
   };
 
   assert.equal(commands.has('ponytail'), true);
@@ -209,8 +210,9 @@ try {
   await commands.get('caveman').handler('status', ctx);
   assert.match(notifications.at(-1).message, /caveman: current lite • effective wenyan-full • global off wenyan-full • repo on/i);
 
-  let injected = await events.get('before_agent_start')({ systemPrompt: ['BASE'] }, ctx);
-  let instructions = injectedInstructions(injected);
+  let event = { systemPrompt: ['BASE'] };
+  let injected = await events.get('before_agent_start')(event, ctx);
+  let instructions = injectedInstructions(injected, event);
   assert.match(instructions, /CAVEMAN MODE ACTIVE — level: lite/);
   assert.match(instructions, /PONYTAIL MODE ACTIVE — level: ultra/);
 
@@ -218,8 +220,9 @@ try {
   assert.match(notifications.at(-1).message, /Ponytail mode set to lite\./);
   assert.equal(widgetLine(), 'Ponytail lite • Caveman lite');
   assert.deepEqual(appended.at(-1), { customType: 'ponytail-mode', data: { enabled: true, mode: 'lite' } });
-  injected = await events.get('before_agent_start')({ systemPrompt: ['BASE'] }, ctx);
-  instructions = injectedInstructions(injected);
+  event = { systemPrompt: ['BASE'] };
+  injected = await events.get('before_agent_start')(event, ctx);
+  instructions = injectedInstructions(injected, event);
   assert.match(instructions, /PONYTAIL MODE ACTIVE — level: lite/);
   assert.match(instructions, /CAVEMAN MODE ACTIVE — level: lite/);
 
@@ -227,8 +230,9 @@ try {
   assert.match(notifications.at(-1).message, /Caveman lite off\./);
   assert.equal(widgetLine(), 'Ponytail lite');
   assert.deepEqual(appended.at(-1), { customType: 'caveman-mode', data: { enabled: false } });
-  injected = await events.get('before_agent_start')({ systemPrompt: ['BASE'] }, ctx);
-  instructions = injectedInstructions(injected);
+  event = { systemPrompt: ['BASE'] };
+  injected = await events.get('before_agent_start')(event, ctx);
+  instructions = injectedInstructions(injected, event);
   assert.doesNotMatch(instructions, /CAVEMAN MODE ACTIVE/);
   assert.match(instructions, /PONYTAIL MODE ACTIVE — level: lite/);
 
