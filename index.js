@@ -541,7 +541,6 @@ export default function ponytailCavemanExtension(pi) {
     refreshStateFromSession(ctx);
     const content = buildBeforeAgentStartContent(state);
     if (!content) return;
-    event.systemPrompt.push(content);
-    return { systemPrompt: event.systemPrompt };
+    return { systemPrompt: [...event.systemPrompt, content] };
   });
 }
